@@ -1,0 +1,40 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# Runs cron_trade.py every 5 minutes as a Render Cron Job.
+#
+# ⚠️  IMPORTANT — STATE DOES NOT PERSIST ON RENDER CRON.
+#     This strategy remembers the previous price in a local file (state.json).
+#     Render cron jobs get a fresh, empty filesystem on every run, so the file
+#     never carries over: each run looks like a first run and NEVER triggers a
+#     buy. To run this strategy as designed, schedule cron_trade.py from your
+#     own crontab / a VM / a container with a mounted volume instead (see
+#     README → "Run it on a schedule"). This blueprint is kept for reference and
+#     for the credentials wiring.
+#
+# ⚠️  Places REAL orders with REAL money. Set ROBINHOOD_MFA_SECRET so the
+#     headless login is unattended (no SMS/app 2FA prompt to answer).
+services:
+  - type: cron
+    name: robinhood-nflx-dip-buyer
+    runtime: python
+    plan: starter # Render cron jobs are a paid feature (no free tier)
+    schedule: "*/5 * * * *" # every 5 minutes
+    buildCommand: pip install -r requirements.txt
+    startCommand: python cron_trade.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.4"
+      - key: ROBINHOOD_USERNAME
+        sync: false
+      - key: ROBINHOOD_PASSWORD
+        sync: false
+      - key: ROBINHOOD_MFA_SECRET
+        sync: false # base32 TOTP secret — required for unattended login
+      - key: SYMBOL
+        value: NFLX
+      - key: MA_WINDOW
+        value: "20"
+      - key: DROP_PCT
+        value: "5"
+      - key: BUY_DOLLARS
+        value: "5"

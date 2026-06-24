@@ -1,0 +1,19 @@
+# Secrets — never commit credentials
+.env
+.env.*
+!.env.example
+.tokens/
+
+# Runtime state written by cron_trade.py
+state.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# OS / editor
+.DS_Store

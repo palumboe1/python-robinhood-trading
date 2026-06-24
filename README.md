@@ -105,6 +105,64 @@ with Trader.from_env() as t:           # logs in, and logs out on exit
     t.sell("AAPL", 1)
 ```
 
+## Scheduled moving-average dip-buyer (`cron_trade.py`)
+
+`cron_trade.py` is a self-contained strategy meant to be run on a schedule
+(e.g. every 5 minutes). Each run it appends the current price to a rolling
+window stored on disk, recomputes a **simple moving average** with pandas, and
+if the average has **fallen `DROP_PCT`% or more versus the previous run's
+average**, places a real fractional buy of `BUY_DOLLARS` worth of the stock.
+
+```bash
+python cron_trade.py
+```
+
+Configure it with environment variables (or `.env`):
+
+| Variable      | Default      | Meaning                                          |
+| ------------- | ------------ | ------------------------------------------------ |
+| `SYMBOL`      | `NFLX`       | ticker to watch                                  |
+| `MA_WINDOW`   | `20`         | number of samples in the moving average          |
+| `DROP_PCT`    | `5`          | percent the average must fall (vs the previous run) to buy |
+| `BUY_DOLLARS` | `5`          | dollars of fractional shares to buy on a trigger |
+| `STATE_FILE`  | `state.json` | where price history + average are persisted      |
+
+**State & warm-up.** The recent prices and the last average are kept in a local
+JSON file (`state.json`), so the average only accumulates on a host with a
+**stable disk** — your own machine, a VM, or a container with a mounted volume.
+The job needs `MA_WINDOW` runs to fill the window before the average exists, and
+the **first full average just sets a baseline** (no trade); drops are detected
+from the next run onward.
+
+> ⚠️ Because a moving average is smoothed, it moving `DROP_PCT`% between two
+> consecutive runs is **very rare** — more so than a raw price move. With a
+> large `MA_WINDOW` the average barely budges per run, so this will seldom fire.
+> Tune `MA_WINDOW` / `DROP_PCT` to taste. (Want "fell 5% off its recent peak"
+> instead of "vs the last run"? That's a one-line change — ask.) Fractional
+> orders also only execute during regular market hours.
+
+### Run it on a schedule (self-hosted)
+
+Add a line to your crontab (`crontab -e`). Use absolute paths so the working
+directory and `.env` resolve correctly:
+
+```cron
+*/5 * * * * cd /path/to/python-robinhood-trading && /usr/bin/python3 cron_trade.py >> cron.log 2>&1
+```
+
+Set `ROBINHOOD_MFA_SECRET` (the base32 TOTP secret) so the unattended login
+needs no interactive 2FA prompt. `robin_stocks` caches its auth token under
+`~/.tokens/`, so a stable home directory avoids re-authenticating every run.
+
+### Render Blueprint (with a caveat)
+
+`render.yaml` defines this as a Render **Cron Job** (`schedule: */5 * * * *`).
+Render is wired up for credentials/config, **but Render cron jobs have an
+ephemeral filesystem** — `state.json` is wiped between runs, so every run looks
+like a first run and never buys. To run the strategy as designed, self-host the
+crontab above, or swap the file state for an external store (e.g. Redis). The
+blueprint is kept for reference and as a starting point.
+
 ## Project layout
 
 ```
@@ -116,6 +174,8 @@ trader/
   trading.py      # buy/sell/cancel order functions
   trader.py       # Trader facade tying it all together
 main.py           # command-line interface
+cron_trade.py     # scheduled dip-buyer (buys NFLX on a 5% drop)
+render.yaml       # Render Blueprint (cron job — see caveat above)
 ```
 
 ## Notes & safety
