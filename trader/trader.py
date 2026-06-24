@@ -17,7 +17,7 @@ Example::
 """
 from __future__ import annotations
 
-from . import account, market_data, trading
+from . import account, market_data, portfolio, trading
 from .client import RobinhoodClient
 from .config import Config
 
@@ -72,6 +72,11 @@ class Trader:
 
     def positions(self) -> pd.DataFrame:
         return account.get_open_positions()
+
+    # --- analytics --------------------------------------------------------
+    def analyze_holdings(self) -> pd.DataFrame:
+        """Holdings enriched with cost basis, unrealized P&L, and weights."""
+        return portfolio.analyze_holdings(self.holdings())
 
     # --- trading ----------------------------------------------------------
     def buy(self, symbol: str, quantity: float, limit_price: float | None = None) -> dict:

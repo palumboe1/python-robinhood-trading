@@ -1,18 +1,21 @@
 # Render Blueprint — https://render.com/docs/blueprint-spec
 #
-# Runs cron_trade.py every 5 minutes as a Render Cron Job.
+# Two separate Render Cron Jobs:
+#   1. robinhood-nflx-dip-buyer  — runs cron_trade.py     (every 5 min)
+#   2. robinhood-portfolio-snap  — runs cron_portfolio.py (every 15 min)
 #
 # ⚠️  IMPORTANT — STATE DOES NOT PERSIST ON RENDER CRON.
-#     This strategy remembers the previous price in a local file (state.json).
-#     Render cron jobs get a fresh, empty filesystem on every run, so the file
-#     never carries over: each run looks like a first run and NEVER triggers a
-#     buy. To run this strategy as designed, schedule cron_trade.py from your
-#     own crontab / a VM / a container with a mounted volume instead (see
-#     README → "Run it on a schedule"). This blueprint is kept for reference and
-#     for the credentials wiring.
+#     Both jobs keep state in local files (state.json / portfolio_history.csv).
+#     Render cron jobs get a fresh, empty filesystem on every run, so those
+#     files never carry over: the dip-buyer always looks like a first run and
+#     NEVER buys, and the portfolio history never accumulates past one row. To
+#     run these as designed, schedule them from your own crontab / a VM / a
+#     container with a mounted volume (see README → "Run it on a schedule").
+#     This blueprint is kept for reference and for the credentials wiring.
 #
-# ⚠️  Places REAL orders with REAL money. Set ROBINHOOD_MFA_SECRET so the
-#     headless login is unattended (no SMS/app 2FA prompt to answer).
+# ⚠️  cron_trade.py places REAL orders with REAL money. Set ROBINHOOD_MFA_SECRET
+#     so the headless login is unattended (no SMS/app 2FA prompt to answer).
+#     cron_portfolio.py is read-only (no orders).
 services:
   - type: cron
     name: robinhood-nflx-dip-buyer
@@ -38,3 +41,24 @@ services:
         value: "5"
       - key: BUY_DOLLARS
         value: "5"
+
+  - type: cron
+    name: robinhood-portfolio-snap
+    runtime: python
+    plan: starter # Render cron jobs are a paid feature (no free tier)
+    schedule: "*/15 * * * *" # every 15 minutes
+    buildCommand: pip install -r requirements.txt
+    startCommand: python cron_portfolio.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.4"
+      - key: ROBINHOOD_USERNAME
+        sync: false
+      - key: ROBINHOOD_PASSWORD
+        sync: false
+      - key: ROBINHOOD_MFA_SECRET
+        sync: false # base32 TOTP secret — required for unattended login
+      - key: HISTORY_FILE
+        value: portfolio_history.csv
+      - key: GRAPH_FILE
+        value: portfolio.png

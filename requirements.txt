@@ -2,3 +2,6 @@ robin_stocks>=3.0.0
 pandas>=2.0.0
 python-dotenv>=1.0.0
 pyotp>=2.9.0
+
+# Portfolio value-over-time chart (trader/portfolio.py)
+matplotlib>=3.7.0

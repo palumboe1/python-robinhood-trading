@@ -7,6 +7,10 @@
 # Runtime state written by cron_trade.py
 state.json
 
+# Portfolio analytics artifacts (cron_portfolio.py / `main.py portfolio`)
+portfolio_history.csv
+portfolio.png
+
 # Python
 __pycache__/
 *.py[cod]

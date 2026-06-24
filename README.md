@@ -141,13 +141,44 @@ from the next run onward.
 > instead of "vs the last run"? That's a one-line change — ask.) Fractional
 > orders also only execute during regular market hours.
 
-### Run it on a schedule (self-hosted)
+## Portfolio analytics & value-over-time graph
 
-Add a line to your crontab (`crontab -e`). Use absolute paths so the working
+`python main.py portfolio` enriches your holdings with **cost basis, unrealized
+P&L, and portfolio weight** (all via pandas), prints the table plus a summary,
+and records a **timestamped snapshot** to `portfolio_history.csv`. Because each
+run appends a row "as of when it fetched," running it repeatedly builds a real
+time series — which `--graph` renders to a PNG.
+
+```bash
+python main.py portfolio                  # analyze + record a snapshot
+python main.py portfolio --graph          # also write portfolio.png
+python main.py portfolio --no-record      # analyze only, don't append
+```
+
+| Column / metric      | Meaning                                            |
+| -------------------- | -------------------------------------------------- |
+| `market_value`       | `quantity × price`                                 |
+| `cost_basis`         | `quantity × average_buy_price`                     |
+| `unrealized_pnl`     | `market_value − cost_basis` (and `_pct`)           |
+| `weight_pct`         | position's share of total market value             |
+
+The same logic runs unattended as a **separate cron job**, `cron_portfolio.py`,
+which appends a snapshot and (re)renders the graph each run — it is **read-only
+and never places orders**:
+
+```bash
+python cron_portfolio.py    # HISTORY_FILE / GRAPH_FILE configurable via env
+```
+
+### Run them on a schedule (self-hosted)
+
+Add lines to your crontab (`crontab -e`). Use absolute paths so the working
 directory and `.env` resolve correctly:
 
 ```cron
-*/5 * * * * cd /path/to/python-robinhood-trading && /usr/bin/python3 cron_trade.py >> cron.log 2>&1
+# dip-buyer every 5 min; portfolio snapshot every 15 min
+*/5  * * * * cd /path/to/python-robinhood-trading && /usr/bin/python3 cron_trade.py     >> cron.log 2>&1
+*/15 * * * * cd /path/to/python-robinhood-trading && /usr/bin/python3 cron_portfolio.py >> cron.log 2>&1
 ```
 
 Set `ROBINHOOD_MFA_SECRET` (the base32 TOTP secret) so the unattended login
@@ -156,12 +187,13 @@ needs no interactive 2FA prompt. `robin_stocks` caches its auth token under
 
 ### Render Blueprint (with a caveat)
 
-`render.yaml` defines this as a Render **Cron Job** (`schedule: */5 * * * *`).
-Render is wired up for credentials/config, **but Render cron jobs have an
-ephemeral filesystem** — `state.json` is wiped between runs, so every run looks
-like a first run and never buys. To run the strategy as designed, self-host the
-crontab above, or swap the file state for an external store (e.g. Redis). The
-blueprint is kept for reference and as a starting point.
+`render.yaml` defines **two** Render **Cron Jobs** — the dip-buyer (`*/5`) and
+the portfolio snapshotter (`*/15`). Render is wired up for credentials/config,
+**but Render cron jobs have an ephemeral filesystem** — `state.json` and
+`portfolio_history.csv` are wiped between runs, so the dip-buyer never sees a
+prior price and the portfolio history never accumulates past one row. To run
+these as designed, self-host the crontab above, or swap the file state for an
+external store (e.g. Redis / a database). The blueprint is kept for reference.
 
 ## Project layout
 
@@ -172,10 +204,12 @@ trader/
   market_data.py  # prices, quotes, historicals -> pandas
   account.py      # buying power, holdings, positions -> pandas
   trading.py      # buy/sell/cancel order functions
+  portfolio.py    # holdings analytics + value-over-time chart (pandas/matplotlib)
   trader.py       # Trader facade tying it all together
-main.py           # command-line interface
+main.py           # command-line interface (incl. `portfolio` command)
 cron_trade.py     # scheduled dip-buyer (buys NFLX on a 5% drop)
-render.yaml       # Render Blueprint (cron job — see caveat above)
+cron_portfolio.py # scheduled portfolio snapshotter (read-only, builds the graph)
+render.yaml       # Render Blueprint (two cron jobs — see caveat above)
 ```
 
 ## Notes & safety

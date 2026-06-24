@@ -22,10 +22,12 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from datetime import datetime, timezone
+from pathlib import Path
 
 import pandas as pd
 
-from trader import Trader
+from trader import Trader, portfolio
 
 pd.set_option("display.max_rows", 100)
 pd.set_option("display.width", 160)
@@ -69,6 +71,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("cancel", help="cancel an open order (or 'all')")
     p.add_argument("order_id")
+
+    p = sub.add_parser(
+        "portfolio", help="holdings analytics + value-over-time snapshot/graph"
+    )
+    p.add_argument(
+        "--graph", nargs="?", const="portfolio.png", metavar="PATH",
+        help="render a portfolio-value timeseries PNG (default: portfolio.png)",
+    )
+    p.add_argument(
+        "--history-file", default="portfolio_history.csv",
+        help="CSV where timestamped snapshots accumulate",
+    )
+    p.add_argument(
+        "--no-record", action="store_true",
+        help="analyze only; don't append a snapshot",
+    )
 
     return parser
 
@@ -117,6 +135,34 @@ def run(args: argparse.Namespace) -> int:
         elif args.command == "cancel":
             result = t.cancel_all() if args.order_id == "all" else t.cancel(args.order_id)
             print(f"Cancelled: {result}")
+
+        elif args.command == "portfolio":
+            holdings = t.holdings()
+            if holdings.empty:
+                print("No holdings.")
+                return 0
+            analyzed = portfolio.analyze_holdings(holdings)
+            cols = [
+                "quantity", "price", "average_buy_price", "market_value",
+                "cost_basis", "unrealized_pnl", "unrealized_pnl_pct", "weight_pct",
+            ]
+            print(analyzed[cols].round(2).to_string())
+            s = portfolio.portfolio_summary(analyzed)
+            print(
+                f"\nTotal value:  ${s['market_value']:,.2f}"
+                f"\nCost basis:   ${s['cost_basis']:,.2f}"
+                f"\nUnrealized:   ${s['unrealized_pnl']:,.2f} ({s['unrealized_pnl_pct']:+.2f}%)"
+                f"\nPositions:    {s['positions']}   Top: {s['top_symbol']} ({s['top_weight_pct']:.1f}%)"
+            )
+            if not args.no_record:
+                added = portfolio.append_snapshot(
+                    Path(args.history_file), datetime.now(timezone.utc), analyzed
+                )
+                print(f"\nRecorded snapshot ({added} positions) -> {args.history_file}")
+            if args.graph is not None:
+                history = portfolio.load_history(Path(args.history_file))
+                out = portfolio.plot_value_over_time(history, args.graph)
+                print(f"Saved graph -> {out}")
 
     return 0
 
